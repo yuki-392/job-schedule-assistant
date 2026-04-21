@@ -40,6 +40,17 @@ function toReadable(dateTime: string) {
   });
 }
 
+function formatCandidateDate(dateTime: string) {
+  const date = new Date(dateTime);
+  const weekdays = ["日", "月", "火", "水", "木", "金", "土"] as const;
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
+  const weekday = weekdays[date.getDay()];
+  const hour = String(date.getHours()).padStart(2, "0");
+  const minute = String(date.getMinutes()).padStart(2, "0");
+  return `${month}/${day}（${weekday}）${hour}:${minute}`;
+}
+
 function getUnavailableReasonText(reason: UnavailableDate["reason"]) {
   if (reason === "calendar_conflict") return "既に予定あり";
   return "日時フォーマット不正";
@@ -72,8 +83,8 @@ export default function Home() {
   const [isCalendarLoading, setIsCalendarLoading] = useState(false);
   const hasSupabaseEnv = Boolean(
     process.env.NEXT_PUBLIC_SUPABASE_URL &&
-      (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-        process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY),
+    (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY),
   );
 
   useEffect(() => {
@@ -100,6 +111,16 @@ export default function Home() {
 
   const availableDates = useMemo(() => judgeResult?.availableDates ?? [], [judgeResult]);
   const unavailableDates = useMemo(() => judgeResult?.unavailableDates ?? [], [judgeResult]);
+  const recommendedDate = useMemo<string | null>(() => {
+    if (availableDates.length === 0) return null;
+    let earliest = availableDates[0];
+    for (let i = 1; i < availableDates.length; i += 1) {
+      if (new Date(availableDates[i]).getTime() < new Date(earliest).getTime()) {
+        earliest = availableDates[i];
+      }
+    }
+    return earliest;
+  }, [availableDates]);
 
   const activeSelectedDates = useMemo(
     () => selectedDates.filter((date) => availableDates.includes(date)),
@@ -133,6 +154,11 @@ ${selectedDateText}
     setJudgeResult(null);
   };
 
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSelectedDates((prev) => prev.filter((date) => availableDates.includes(date)));
+  }, [availableDates]);
+
   const removeCandidateDate = (target: string) => {
     setCandidateDates((prev) => prev.filter((date) => date !== target));
     setSelectedDates((prev) => prev.filter((date) => date !== target));
@@ -143,7 +169,6 @@ ${selectedDateText}
     const result = judgeAvailability(candidateDates, calendarEvents);
     setJudgeResult(result);
     setIsNgExpanded(false);
-    setSelectedDates((prev) => prev.filter((date) => result.availableDates.includes(date)));
   };
   const toggleSelectedDate = (date: string) => {
     setSelectedDates((prev) => {
@@ -408,7 +433,16 @@ ${selectedDateText}
                     className="rounded-lg border border-emerald-300 bg-emerald-50 p-4"
                   >
                     <div className="flex flex-wrap items-center justify-between gap-3">
-                      <span className="text-base font-semibold text-emerald-900">{toReadable(date)}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-base font-semibold text-emerald-900">
+                          {activeSelectedDates.includes(date) ? "[x]" : "[ ]"} {formatCandidateDate(date)}
+                        </span>
+                        {recommendedDate === date && (
+                          <span className="rounded-full bg-emerald-700 px-2 py-0.5 text-xs font-semibold text-white">
+                            おすすめ
+                          </span>
+                        )}
+                      </div>
                       <button
                         type="button"
                         onClick={() => toggleSelectedDate(date)}
