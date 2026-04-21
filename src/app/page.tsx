@@ -45,6 +45,15 @@ function getUnavailableReasonText(reason: UnavailableDate["reason"]) {
   return "日時フォーマット不正";
 }
 
+function toIsoRange(days = 14) {
+  const now = new Date();
+  const end = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+  return {
+    timeMin: now.toISOString(),
+    timeMax: end.toISOString(),
+  };
+}
+
 export default function Home() {
   const mailSectionRef = useRef<HTMLElement | null>(null);
   const [isSignedIn, setIsSignedIn] = useState(false);
@@ -54,12 +63,17 @@ export default function Home() {
   const [companyName, setCompanyName] = useState("");
   const [candidateDates, setCandidateDates] = useState<string[]>([]);
   const [candidateInput, setCandidateInput] = useState("");
-  const [selectedDate, setSelectedDate] = useState("");
+  const [selectedDates, setSelectedDates] = useState<string[]>([]);
   const [copyStatus, setCopyStatus] = useState("");
   const [judgeResult, setJudgeResult] = useState<JudgeAvailabilityResult | null>(null);
   const [isNgExpanded, setIsNgExpanded] = useState(false);
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>(MOCK_CALENDAR_EVENTS);
+  const [calendarMessage, setCalendarMessage] = useState("未同期（現在はモック予定を使用）");
+  const [isCalendarLoading, setIsCalendarLoading] = useState(false);
   const hasSupabaseEnv = Boolean(
-    process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    process.env.NEXT_PUBLIC_SUPABASE_URL &&
+      (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+        process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY),
   );
 
   useEffect(() => {
@@ -87,25 +101,28 @@ export default function Home() {
   const availableDates = useMemo(() => judgeResult?.availableDates ?? [], [judgeResult]);
   const unavailableDates = useMemo(() => judgeResult?.unavailableDates ?? [], [judgeResult]);
 
-  const activeSelectedDate = useMemo(
-    () => (selectedDate && availableDates.includes(selectedDate) ? selectedDate : ""),
-    [availableDates, selectedDate],
+  const activeSelectedDates = useMemo(
+    () => selectedDates.filter((date) => availableDates.includes(date)),
+    [availableDates, selectedDates],
   );
+  const canGenerateEmail = companyName.trim().length > 0 && activeSelectedDates.length > 0;
 
   const emailBody = useMemo(() => {
-    if (!companyName || !activeSelectedDate) {
+    if (!companyName || activeSelectedDates.length === 0) {
       return "";
     }
+
+    const selectedDateText = activeSelectedDates.map((date) => `- ${toReadable(date)}`).join("\n");
 
     return `${companyName} 採用ご担当者様
 
 お世話になっております。面接日程のご連絡ありがとうございます。
 以下の日程で参加可能です。
 
-${toReadable(activeSelectedDate)}
+${selectedDateText}
 
 何卒よろしくお願いいたします。`;
-  }, [companyName, activeSelectedDate]);
+  }, [companyName, activeSelectedDates]);
 
   const addCandidateDate = () => {
     if (!candidateInput) return;
@@ -118,22 +135,29 @@ ${toReadable(activeSelectedDate)}
 
   const removeCandidateDate = (target: string) => {
     setCandidateDates((prev) => prev.filter((date) => date !== target));
-    if (selectedDate === target) {
-      setSelectedDate("");
-    }
+    setSelectedDates((prev) => prev.filter((date) => date !== target));
     setJudgeResult(null);
   };
 
   const handleJudge = () => {
-    const result = judgeAvailability(candidateDates, MOCK_CALENDAR_EVENTS);
+    const result = judgeAvailability(candidateDates, calendarEvents);
     setJudgeResult(result);
     setIsNgExpanded(false);
-    if (selectedDate && !result.availableDates.includes(selectedDate)) {
-      setSelectedDate("");
-    }
+    setSelectedDates((prev) => prev.filter((date) => result.availableDates.includes(date)));
+  };
+  const toggleSelectedDate = (date: string) => {
+    setSelectedDates((prev) => {
+      if (prev.includes(date)) return prev.filter((item) => item !== date);
+      return [...prev, date];
+    });
+    setCopyStatus("");
   };
 
+
   const scrollToMailSection = () => {
+    if (availableDates.length > 0 && activeSelectedDates.length === 0) {
+      setSelectedDates(availableDates);
+    }
     mailSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
@@ -154,6 +178,11 @@ ${toReadable(activeSelectedDate)}
       provider: "google",
       options: {
         redirectTo: `${window.location.origin}/auth/callback`,
+        scopes: "openid email profile https://www.googleapis.com/auth/calendar.readonly",
+        queryParams: {
+          access_type: "offline",
+          prompt: "consent",
+        },
       },
     });
 
@@ -178,6 +207,82 @@ ${toReadable(activeSelectedDate)}
     setIsAuthLoading(false);
   };
 
+  const syncGoogleCalendar = async () => {
+    if (!hasSupabaseEnv) return;
+
+    const supabase = createClient();
+    setIsCalendarLoading(true);
+    setCalendarMessage("");
+
+    const { data, error } = await supabase.auth.getSession();
+    if (error) {
+      setCalendarMessage("セッション取得に失敗しました。再ログインしてください。");
+      setIsCalendarLoading(false);
+      return;
+    }
+
+    const providerToken = (data.session as { provider_token?: string } | null)?.provider_token;
+    if (!providerToken) {
+      setCalendarMessage("Googleトークンが見つかりません。再ログインして権限を許可してください。");
+      setIsCalendarLoading(false);
+      return;
+    }
+
+    const { timeMin, timeMax } = toIsoRange(21);
+    const url = new URL("https://www.googleapis.com/calendar/v3/calendars/primary/events");
+    url.searchParams.set("singleEvents", "true");
+    url.searchParams.set("orderBy", "startTime");
+    url.searchParams.set("timeMin", timeMin);
+    url.searchParams.set("timeMax", timeMax);
+    url.searchParams.set("maxResults", "100");
+
+    try {
+      const response = await fetch(url.toString(), {
+        headers: {
+          Authorization: `Bearer ${providerToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        setCalendarMessage("Googleカレンダー取得に失敗しました。権限設定を確認してください。");
+        setIsCalendarLoading(false);
+        return;
+      }
+
+      type GoogleEventsResponse = {
+        items?: Array<{
+          id?: string;
+          summary?: string;
+          start?: { dateTime?: string; date?: string };
+          end?: { dateTime?: string; date?: string };
+        }>;
+      };
+
+      const json = (await response.json()) as GoogleEventsResponse;
+      const events: CalendarEvent[] = (json.items ?? [])
+        .map((item, index) => {
+          const start = item.start?.dateTime ?? item.start?.date;
+          const end = item.end?.dateTime ?? item.end?.date;
+          if (!start || !end) return null;
+
+          return {
+            id: item.id ?? `google-${index}`,
+            title: item.summary ?? "予定",
+            start,
+            end,
+          };
+        })
+        .filter((event): event is CalendarEvent => event !== null);
+
+      setCalendarEvents(events);
+      setCalendarMessage(`${events.length}件の予定を同期しました`);
+    } catch {
+      setCalendarMessage("Googleカレンダー取得中にエラーが発生しました。");
+    } finally {
+      setIsCalendarLoading(false);
+    }
+  };
+
   return (
     <main className="min-h-screen bg-slate-50 p-6 text-slate-900 md:p-10">
       <div className="mx-auto max-w-4xl space-y-6">
@@ -194,7 +299,8 @@ ${toReadable(activeSelectedDate)}
           <p className="mt-1 text-sm text-slate-600">Supabase Auth + Google OAuthで認証します。</p>
           {!hasSupabaseEnv && (
             <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-              `NEXT_PUBLIC_SUPABASE_URL` と `NEXT_PUBLIC_SUPABASE_ANON_KEY` が未設定です。
+              `NEXT_PUBLIC_SUPABASE_URL` と
+              `NEXT_PUBLIC_SUPABASE_ANON_KEY`（または`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`）が未設定です。
             </p>
           )}
           <button
@@ -211,6 +317,19 @@ ${toReadable(activeSelectedDate)}
               : "連携状態: 未接続"}
           </p>
           {authMessage && <p className="mt-2 text-sm text-red-600">{authMessage}</p>}
+          {isSignedIn && (
+            <div className="mt-3">
+              <button
+                type="button"
+                onClick={syncGoogleCalendar}
+                disabled={isCalendarLoading}
+                className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100"
+              >
+                {isCalendarLoading ? "同期中..." : "Googleカレンダーを同期"}
+              </button>
+              <p className="mt-2 text-sm text-slate-600">{calendarMessage}</p>
+            </div>
+          )}
         </section>
 
         <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -292,13 +411,10 @@ ${toReadable(activeSelectedDate)}
                       <span className="text-base font-semibold text-emerald-900">{toReadable(date)}</span>
                       <button
                         type="button"
-                        onClick={() => {
-                          setSelectedDate(date);
-                          setCopyStatus("");
-                        }}
+                        onClick={() => toggleSelectedDate(date)}
                         className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
                       >
-                        {activeSelectedDate === date ? "選択中" : "この日時を選択"}
+                        {activeSelectedDates.includes(date) ? "選択中" : "この日時を選択"}
                       </button>
                     </div>
                   </li>
@@ -313,6 +429,11 @@ ${toReadable(activeSelectedDate)}
               >
                 メール作成へ進む
               </button>
+            )}
+            {activeSelectedDates.length > 0 && (
+              <p className="mt-2 text-sm text-emerald-800">
+                {activeSelectedDates.length}件の日程を選択中です。
+              </p>
             )}
           </div>
 
@@ -359,7 +480,7 @@ ${toReadable(activeSelectedDate)}
           <h2 className="text-lg font-semibold">3. メール文を生成してコピー</h2>
           {!emailBody ? (
             <p className="mt-2 text-sm text-slate-600">
-              企業名と候補日を選択すると、テンプレートメールを生成します。
+              企業名と候補日（複数可）を選択すると、テンプレートメールを生成します。
             </p>
           ) : (
             <textarea
@@ -372,12 +493,12 @@ ${toReadable(activeSelectedDate)}
             <button
               type="button"
               onClick={copyEmail}
-              disabled={!emailBody}
+              disabled={!canGenerateEmail}
               className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
             >
               メール文をコピー
             </button>
-            {activeSelectedDate && (
+            {canGenerateEmail && (
               <a
                 href={`https://mail.google.com/mail/?view=cm&fs=1&to=&su=${encodeURIComponent(
                   `${companyName} 面接日程のご返信`,
@@ -390,6 +511,11 @@ ${toReadable(activeSelectedDate)}
               </a>
             )}
           </div>
+          {!canGenerateEmail && (
+            <p className="mt-2 text-sm text-slate-500">
+              企業名を入力し、空き候補を1件以上選択するとメール作成できます。
+            </p>
+          )}
           {copyStatus && <p className="mt-2 text-sm text-emerald-700">{copyStatus}</p>}
         </section>
       </div>
