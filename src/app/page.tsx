@@ -8,6 +8,10 @@ import {
   type JudgeAvailabilityResult,
   type UnavailableDate,
 } from "@/domain/judgeAvailability";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 
 const MOCK_CALENDAR_EVENTS: CalendarEvent[] = [
   {
@@ -48,7 +52,7 @@ function formatCandidateDate(dateTime: string) {
   const weekday = weekdays[date.getDay()];
   const hour = String(date.getHours()).padStart(2, "0");
   const minute = String(date.getMinutes()).padStart(2, "0");
-  return `${month}/${day}（${weekday}）${hour}:${minute}`;
+  return `${month}/${day}（${weekday}）${hour}:${minute}〜`;
 }
 
 function getUnavailableReasonText(reason: UnavailableDate["reason"]) {
@@ -420,55 +424,74 @@ ${selectedDateText}
           </div>
 
           <div className="mt-5">
-            <h3 className="text-base font-semibold text-slate-900">✅ 空き候補</h3>
-            {!judgeResult ? (
-              <p className="mt-2 text-sm text-slate-500">「判定する」を押すと結果が表示されます。</p>
-            ) : availableDates.length === 0 ? (
-              <p className="mt-2 text-sm text-slate-500">空き候補はありません。</p>
-            ) : (
-              <ul className="mt-3 space-y-3">
-                {availableDates.map((date) => (
-                  <li
-                    key={date}
-                    className="rounded-lg border border-emerald-300 bg-emerald-50 p-4"
+            <Card>
+              <CardHeader className="pb-4">
+                <CardTitle>面接候補日を選択</CardTitle>
+                <CardDescription>
+                  空いている日時を選択してください（複数選択可）
+                </CardDescription>
+                <p className="text-sm font-semibold text-slate-700">
+                  選択中: {activeSelectedDates.length}件
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {!judgeResult ? (
+                  <p className="text-sm text-slate-500">「判定する」を押すと結果が表示されます。</p>
+                ) : availableDates.length === 0 ? (
+                  <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+                    利用可能な候補がありません
+                  </div>
+                ) : (
+                  <ul className="space-y-2">
+                    {availableDates.map((date) => {
+                      const isSelected = activeSelectedDates.includes(date);
+                      return (
+                        <li key={date}>
+                          <div
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => toggleSelectedDate(date)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                toggleSelectedDate(date);
+                              }
+                            }}
+                            className={`flex w-full items-center justify-between rounded-md border px-3 py-3 text-left transition-colors ${isSelected
+                                ? "border-blue-300 bg-blue-50"
+                                : "border-slate-200 bg-white hover:bg-slate-50"
+                              }`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <Checkbox
+                                checked={isSelected}
+                                aria-label={`${formatCandidateDate(date)} を選択`}
+                                onCheckedChange={() => toggleSelectedDate(date)}
+                                onClick={(event) => event.stopPropagation()}
+                              />
+                              <span className="text-sm font-medium text-slate-800">
+                                {formatCandidateDate(date)}
+                              </span>
+                              {recommendedDate === date && <Badge variant="recommendation">おすすめ</Badge>}
+                            </div>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    onClick={scrollToMailSection}
+                    disabled={activeSelectedDates.length === 0}
                   >
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div className="flex items-center gap-2">
-                        <span className="text-base font-semibold text-emerald-900">
-                          {activeSelectedDates.includes(date) ? "[x]" : "[ ]"} {formatCandidateDate(date)}
-                        </span>
-                        {recommendedDate === date && (
-                          <span className="rounded-full bg-emerald-700 px-2 py-0.5 text-xs font-semibold text-white">
-                            おすすめ
-                          </span>
-                        )}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => toggleSelectedDate(date)}
-                        className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
-                      >
-                        {activeSelectedDates.includes(date) ? "選択中" : "この日時を選択"}
-                      </button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-            {judgeResult && availableDates.length > 0 && (
-              <button
-                type="button"
-                onClick={scrollToMailSection}
-                className="mt-4 rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
-              >
-                メール作成へ進む
-              </button>
-            )}
-            {activeSelectedDates.length > 0 && (
-              <p className="mt-2 text-sm text-emerald-800">
-                {activeSelectedDates.length}件の日程を選択中です。
-              </p>
-            )}
+                    メール生成へ進む
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
           </div>
 
           <div className="mt-5">
