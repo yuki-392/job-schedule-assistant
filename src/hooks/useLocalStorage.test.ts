@@ -74,6 +74,29 @@ describe("useLocalStorage", () => {
       expect(result.current[0]).toBe("fallback");
     });
   });
+
+  describe("ハイドレーション", () => {
+    it("エフェクト実行後はisHydratedがtrue", async () => {
+      const { result } = renderHook(() => useLocalStorage("key", "v"));
+      await act(async () => {});
+      expect(result.current[2]).toBe(true);
+    });
+
+    it("ハイドレーション前は保存済みデータをlocalStorageに上書きしない", async () => {
+      store["key"] = JSON.stringify("saved");
+      renderHook(() => useLocalStorage("key", "initial"));
+      // エフェクトが走る前（同期タイミング）では書き込まれない
+      expect(store["key"]).toBe(JSON.stringify("saved"));
+    });
+
+    it("ハイドレーション後にsetValueすると正しくlocalStorageに書き込まれる", async () => {
+      store["key"] = JSON.stringify("saved");
+      const { result } = renderHook(() => useLocalStorage("key", "initial"));
+      await act(async () => {});
+      await act(async () => { result.current[1]("new-value"); });
+      expect(store["key"]).toBe(JSON.stringify("new-value"));
+    });
+  });
 });
 
 describe("カレンダー未連携シナリオ（isCalendarSynced の導出）", () => {

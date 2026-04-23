@@ -14,10 +14,11 @@
 
 ## 2. 認証・認可方針
 
-- すべてのMVP APIは「ログイン済みユーザーのみ」利用可能
-- セッション判定は `supabase.auth.getUser()` で実施
-- 未認証時は `401 Unauthorized` を返す
-- ユーザーIDは Supabase の `auth.users.id` を利用
+- `GET /api/calendar/events`: ログイン済みユーザーのみ（Google provider_token が必要なため）
+- `POST /api/interviews/judge`: 認証不要（クライアントからカレンダーイベントを受け取る）
+- `POST /api/mail/generate`: 認証不要（テンプレート生成のみ）
+- セッション判定は `supabase.auth.getSession()` でサーバー側から実施
+- Google provider_token はブラウザに露出しない（Route Handler 内でのみ使用）
 
 ---
 
@@ -60,92 +61,78 @@
 ### 目的
 候補日時範囲とカレンダー予定を照合し、空き時間帯を返す。
 予定が候補範囲に含まれる場合、予定の前後 `bufferMinutes`（デフォルト60分）を自動除外する。
+認証不要: クライアントがカレンダーイベントをリクエストボディで渡す。
 
 ### Request Body
 ```json
 {
-  "companyName": "株式会社サンプル",
   "candidateRanges": [
     {
+      "id": "uuid-1",
       "start": "2026-04-23T10:00:00+09:00",
       "end": "2026-04-23T18:00:00+09:00"
     },
     {
+      "id": "uuid-2",
       "start": "2026-04-24T10:00:00+09:00",
       "end": "2026-04-24T18:00:00+09:00"
     }
   ],
-  "bufferMinutes": 60,
-  "calendarRange": {
-    "from": "2026-04-20T00:00:00+09:00",
-    "to": "2026-04-30T23:59:59+09:00"
-  }
+  "calendarEvents": [
+    { "id": "evt_123", "title": "ゼミ", "start": "2026-04-23T10:00:00+09:00", "end": "2026-04-23T11:30:00+09:00" }
+  ],
+  "bufferMinutes": 60
 }
 ```
 
 ### 成功レスポンス `200`
 ```json
 {
-  "companyName": "株式会社サンプル",
-  "results": [
-    {
-      "candidateStart": "2026-04-24T10:00:00+09:00",
-      "candidateEnd": "2026-04-24T18:00:00+09:00",
+  "results": {
+    "uuid-2": {
       "availableRanges": [
-        {
-          "start": "2026-04-24T10:00:00+09:00",
-          "end": "2026-04-24T13:00:00+09:00"
-        },
-        {
-          "start": "2026-04-24T16:00:00+09:00",
-          "end": "2026-04-24T18:00:00+09:00"
-        }
+        { "start": "2026-04-24T10:00:00.000Z", "end": "2026-04-24T13:00:00.000Z" },
+        { "start": "2026-04-24T16:00:00.000Z", "end": "2026-04-24T18:00:00.000Z" }
       ],
       "blockedRanges": [
-        {
-          "start": "2026-04-24T13:00:00+09:00",
-          "end": "2026-04-24T16:00:00+09:00",
-          "conflictEventIds": ["evt_123"]
-        }
+        { "start": "2026-04-24T13:00:00.000Z", "end": "2026-04-24T16:00:00.000Z", "conflictEventIds": ["evt_123"] }
       ]
     }
-  ]
+  }
 }
 ```
 
 ### エラー
 - `400`: 必須項目不足 / 日時フォーマット不正 / `start >= end`
-- `401`: 未認証
 - `422`: `candidateRanges` が空
-- `502`: カレンダー取得失敗
 
 ---
 
 ## `POST /api/mail/generate`
 
 ### 目的
-選択済み候補日を使って返信メール本文を生成する（テンプレートベース）
+選択済み候補日を使って返信メール本文を生成する（テンプレートベース）。認証不要。
 
 ### Request Body
 ```json
 {
   "companyName": "株式会社サンプル",
-  "selectedDate": "2026-04-24T19:00:00+09:00",
-  "userName": "山田 太郎"
+  "selectedRanges": [
+    { "start": "2026-04-24T10:00:00.000Z", "end": "2026-04-24T13:00:00.000Z" }
+  ]
 }
 ```
 
 ### 成功レスポンス `200`
 ```json
 {
-  "subject": "面接日程のご返信（山田 太郎）",
+  "subject": "株式会社サンプル 面接日程のご返信",
   "body": "株式会社サンプル 採用ご担当者様\n\nお世話になっております。..."
 }
 ```
 
 ### エラー
-- `400`: `companyName` / `selectedDate` 欠落
-- `401`: 未認証
+- `400`: `companyName` / `selectedRanges` 欠落
 
 ---
 
@@ -207,10 +194,13 @@
 
 ## 6. 処理フロー（MVP）
 
-1. ログイン後、`GET /api/calendar/events` で期間予定取得
-2. 候補日入力後、`POST /api/interviews/judge` で空き判定
-3. 空き候補選択後、`POST /api/mail/generate` で文面生成
+1. （任意）ログイン後、`GET /api/calendar/events` で期間予定取得 → クライアントの localStorage に保存
+2. 候補日入力後、「判定する」ボタン → `POST /api/interviews/judge`（calendarEvents をボディで送信）
+3. 空き候補選択 → クライアント側で useMemo によりメール文をリアルタイム生成
 4. フロントでコピー or Gmail compose URLへ遷移
+5. `POST /api/mail/generate` はステップ3の代替手段として利用可能（バックエンド生成）
+
+未ログインユーザーはステップ1をスキップでき、カレンダーチェックなしで候補日からメールを作成できる。
 
 ---
 

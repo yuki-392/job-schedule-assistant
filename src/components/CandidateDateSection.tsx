@@ -22,6 +22,7 @@ type Props = {
   onAddDate: (startDateTime: string, endDateTime: string) => void;
   onRemoveDate: (id: string) => void;
   onJudge: () => void;
+  isJudgeLoading: boolean;
   hasJudgeResult: boolean;
   isCalendarSynced: boolean;
   availableRanges: AvailableRange[];
@@ -137,6 +138,7 @@ export function CandidateDateSection({
   onAddDate,
   onRemoveDate,
   onJudge,
+  isJudgeLoading,
   hasJudgeResult,
   isCalendarSynced,
   availableRanges,
@@ -252,10 +254,10 @@ export function CandidateDateSection({
         <button
           type="button"
           onClick={onJudge}
-          disabled={candidateDates.length === 0}
+          disabled={candidateDates.length === 0 || isJudgeLoading}
           className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
         >
-          判定する
+          {isJudgeLoading ? "判定中..." : "判定する"}
         </button>
       </div>
 

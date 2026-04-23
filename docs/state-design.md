@@ -1,22 +1,35 @@
-# 状態設計（軽量版 / MVP）
+# 状態設計（MVP）
 
 対象状態:
-- `candidateDates`（候補オブジェクト配列）
-- `judgeResultMap`（判定結果マップ）
-- `selectedRangeKeys`（選択済み空き時間帯キー）
+- `companies`（企業リスト。各社が candidateDates・selectedRangeKeys を保持）
+- `activeCompanyId`（選択中の企業ID）
+- `judgeResultMap`（判定結果マップ。企業切り替え・カレンダー同期で自動再計算）
+- `calendarEvents`（Googleカレンダー同期結果）
 
 ---
 
 ## 1. 結論（MVP）
 
-- **初期実装は `useState` で持つ**
-- 判定はクライアントで即時計算（体験重視）
+- **`companies` / `activeCompanyId` / `calendarEvents` は `useLocalStorage` で永続化**（リロード後も復元）
+- **`judgeResultMap` は `useState`**（揮発性・企業切り替え・カレンダー同期で自動再計算）
 - **`availableRanges` は導出値として100%統一する（保存しない）**
-- 永続化や共有が必要になったら `Server Actions` に切り出す
+- 判定ロジックは `/api/interviews/judge` Route Handler で実行（サーバーサイド）
 
 ---
 
 ## 2. 状態の責務
+
+## `Company` 型
+```ts
+type Company = {
+  id: string;
+  name: string;
+  candidateDates: CandidateDate[];
+  selectedRangeKeys: string[];
+};
+```
+- `companies: Company[]` と `activeCompanyId: string` を `useLocalStorage` で保持
+- アクティブ企業のデータは `companies.find(c => c.id === activeCompanyId)` で導出
 
 ## `candidateDates: CandidateDate[]`
 - **保持内容**: 候補日時範囲 + 最小メタ情報
@@ -96,17 +109,50 @@ type RangeJudgeResult = {
 
 ---
 
-## 4. `useState` と `Server Actions` の切り分け
+## 4. 永続化の方針
 
-## `useState` で持つもの（今すぐ）
-- フォーム入力中の値
-- 画面内の一時状態
-- `candidateDates` / `selectedRangeKeys` など入力と選択状態
+## `useLocalStorage` で永続化するもの
 
-## `Server Actions` に上げるもの（次フェーズ）
-- `interviews` / `interview_candidates` への保存
-- 候補確定（`selectedRangeKeys`）の永続化
-- 複数デバイス/再訪時の復元
+| キー | 型 | 内容 |
+|---|---|---|
+| `jsa:companies` | `Company[]` | 企業リスト（候補日・選択済みキーを含む）|
+| `jsa:activeCompanyId` | `string` | 選択中企業のID |
+| `jsa:calendarEvents` | `CalendarEvent[]` | 同期済みカレンダーイベント |
+| `jsa:calendarMessage` | `string` | 同期メッセージ |
+
+### ハイドレーション設計（重要）
+
+`useLocalStorage` は `isHydrated` フラグを返す。
+
+```ts
+const [value, setValue, isHydrated] = useLocalStorage(key, initialValue);
+```
+
+- **マウント直後**: `isHydrated = false`。書き込みエフェクトはスキップされるため、`initialValue` でlocalStorageを上書きしない
+- **読み込み完了後**: `isHydrated = true` になり、書き込みが有効になる
+- **注意**: localStorageからの復元に依存する初期化処理（デフォルト企業作成など）は `isHydrated` を確認してから実行する
+
+```ts
+// NG: isHydrated を待たずに実行すると、保存済みデータを上書きしてしまう
+useEffect(() => {
+  if (companies.length === 0) createDefaultCompany();
+}, []);
+
+// OK: ハイドレーション後に実行
+useEffect(() => {
+  if (!isCompaniesHydrated) return;
+  if (companies.length === 0) createDefaultCompany();
+}, [isCompaniesHydrated]);
+```
+
+## `useState`（揮発性）で持つもの
+- `judgeResultMap`（起動時・企業切り替え時に自動再計算）
+- `isAuthLoading` / `isCalendarLoading` などのUI状態
+- `needsReauth` / `isNgExpanded` などのセッション内フラグ
+
+## 将来（Supabase DB）に移行するもの
+- `interviews` / `interview_candidates` テーブルへの永続化
+- 複数デバイス/再訪時のクロス同期
 
 ---
 

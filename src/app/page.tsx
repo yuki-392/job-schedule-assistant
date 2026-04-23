@@ -12,6 +12,7 @@ import {
   type RangeJudgeResult,
 } from "@/domain/judgeAvailability";
 import { formatRangeDate } from "@/lib/format";
+import { fetchCompaniesFromDb, saveCompaniesToDb } from "@/lib/db";
 import { GoogleAuthSection } from "@/components/GoogleAuthSection";
 import { CandidateDateSection } from "@/components/CandidateDateSection";
 import { MailSection } from "@/components/MailSection";
@@ -23,10 +24,10 @@ type Company = {
   selectedRangeKeys: string[];
 };
 
-function toIsoRange(days = 14) {
+function toIsoRange(days = 21) {
   const now = new Date();
   const end = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
-  return { timeMin: now.toISOString(), timeMax: end.toISOString() };
+  return { from: now.toISOString(), to: end.toISOString() };
 }
 
 export default function Home() {
@@ -42,20 +43,22 @@ export default function Home() {
   const [isCalendarLoading, setIsCalendarLoading] = useState(false);
   const [needsReauth, setNeedsReauth] = useState(false);
 
-  const [companies, setCompanies] = useLocalStorage<Company[]>("jsa:companies", []);
+  const [companies, setCompanies, isCompaniesHydrated] = useLocalStorage<Company[]>("jsa:companies", []);
   const [activeCompanyId, setActiveCompanyId] = useLocalStorage("jsa:activeCompanyId", "");
   const [judgeResultMap, setJudgeResultMap] = useState<Record<string, RangeJudgeResult> | null>(null);
+  const [isJudgeLoading, setIsJudgeLoading] = useState(false);
   const [isNgExpanded, setIsNgExpanded] = useState(false);
 
-  // 企業が1件もなければデフォルト企業を作成
+  // ハイドレーション完了後にのみ実行（リロード時に保存済みデータを上書きしないため）
   useEffect(() => {
+    if (!isCompaniesHydrated) return;
     if (companies.length === 0) {
       const id = crypto.randomUUID();
       setCompanies([{ id, name: "", candidateDates: [], selectedRangeKeys: [] }]);
       setActiveCompanyId(id);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [isCompaniesHydrated]);
 
   const hasSupabaseEnv = Boolean(
     process.env.NEXT_PUBLIC_SUPABASE_URL &&
@@ -76,6 +79,39 @@ export default function Home() {
     });
     return () => subscription.unsubscribe();
   }, [hasSupabaseEnv]);
+
+  // 非同期コールバック内で常に最新のcompaniesを参照するためのref
+  const companiesRef = useRef(companies);
+  companiesRef.current = companies;
+
+  // ログイン直後: DBにデータがあればロード、なければlocalStorageのデータをDBへ初回同期
+  useEffect(() => {
+    if (!isSignedIn || !isCompaniesHydrated) return;
+    fetchCompaniesFromDb().then((dbCompanies) => {
+      if (dbCompanies.length > 0) {
+        const loaded: Company[] = dbCompanies.map((c) => ({ ...c, selectedRangeKeys: [] }));
+        setCompanies(loaded);
+        setActiveCompanyId(loaded[0].id);
+      } else {
+        void saveCompaniesToDb(
+          companiesRef.current.map(({ id, name, candidateDates }) => ({ id, name, candidateDates })),
+        );
+      }
+    });
+  // isSignedIn / isCompaniesHydrated の変化時のみ実行（companiesは ref 経由で参照）
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSignedIn, isCompaniesHydrated]);
+
+  // ログイン中の変更を1.5秒デバウンスでDBへ同期
+  useEffect(() => {
+    if (!isSignedIn || !isCompaniesHydrated) return;
+    const timer = setTimeout(() => {
+      void saveCompaniesToDb(
+        companies.map(({ id, name, candidateDates }) => ({ id, name, candidateDates })),
+      );
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [isSignedIn, isCompaniesHydrated, companies]);
 
   // アクティブ企業のデータを導出
   const activeCompany = companies.find(c => c.id === activeCompanyId) ?? companies[0] ?? null;
@@ -163,12 +199,27 @@ export default function Home() {
 
   const canGenerateEmail = companyName.trim().length > 0 && activeSelectedRangeKeys.length > 0;
 
-  const emailBody = useMemo(() => {
-    if (!canGenerateEmail) return "";
+  const [emailBody, setEmailBody] = useState("");
+
+  useEffect(() => {
+    if (!canGenerateEmail) {
+      setEmailBody("");
+      return;
+    }
     const activeRanges = allAvailableRanges.filter((r) => activeSelectedRangeKeys.includes(rangeKey(r)));
-    const rangeText = activeRanges.map((r) => `- ${formatRangeDate(r.start, r.end)}`).join("\n");
-    return `${companyName} 採用ご担当者様\n\nお世話になっております。面接日程のご連絡ありがとうございます。\n以下の時間帯で参加可能です。\n\n${rangeText}\n\n何卒よろしくお願いいたします。`;
-  }, [canGenerateEmail, companyName, activeSelectedRangeKeys, allAvailableRanges]);
+    fetch("/api/mail/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ companyName, selectedRanges: activeRanges }),
+    })
+      .then((res) => res.json() as Promise<{ body?: string }>)
+      .then((json) => { if (json.body) setEmailBody(json.body); })
+      .catch(() => {
+        const rangeText = activeRanges.map((r) => `- ${formatRangeDate(r.start, r.end)}`).join("\n");
+        setEmailBody(`${companyName} 採用ご担当者様\n\nお世話になっております。面接日程のご連絡ありがとうございます。\n以下の時間帯で参加可能です。\n\n${rangeText}\n\n何卒よろしくお願いいたします。`);
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canGenerateEmail, companyName, activeSelectedRangeKeys.join(","), allAvailableRanges]);
 
   // 企業切り替えとカレンダー同期時に自動で判定（候補日の追加・削除には反応しない）
   useEffect(() => {
@@ -176,11 +227,23 @@ export default function Home() {
       setJudgeResultMap(null);
       return;
     }
-    const results: Record<string, RangeJudgeResult> = {};
-    for (const c of candidateDates) {
-      results[c.id] = judgeRangeAvailability(c.candidateDate, c.candidateEndDate, calendarEvents);
-    }
-    setJudgeResultMap(results);
+    fetch("/api/interviews/judge", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        candidateRanges: candidateDates.map((c) => ({ id: c.id, start: c.candidateDate, end: c.candidateEndDate })),
+        calendarEvents,
+      }),
+    })
+      .then((res) => res.json() as Promise<{ results?: Record<string, RangeJudgeResult> }>)
+      .then((json) => { if (json.results) setJudgeResultMap(json.results); })
+      .catch(() => {
+        const results: Record<string, RangeJudgeResult> = {};
+        for (const c of candidateDates) {
+          results[c.id] = judgeRangeAvailability(c.candidateDate, c.candidateEndDate, calendarEvents);
+        }
+        setJudgeResultMap(results);
+      });
   // candidateDates は依存に含めない（手動追加・削除後は「判定する」ボタンを使う）
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeCompanyId, calendarEvents]);
@@ -212,13 +275,31 @@ export default function Home() {
     setJudgeResultMap(null);
   };
 
-  const handleJudge = () => {
-    const results: Record<string, RangeJudgeResult> = {};
-    for (const c of candidateDates) {
-      results[c.id] = judgeRangeAvailability(c.candidateDate, c.candidateEndDate, calendarEvents);
-    }
-    setJudgeResultMap(results);
+  const handleJudge = async () => {
     setIsNgExpanded(false);
+    setIsJudgeLoading(true);
+    try {
+      const response = await fetch("/api/interviews/judge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          candidateRanges: candidateDates.map((c) => ({ id: c.id, start: c.candidateDate, end: c.candidateEndDate })),
+          calendarEvents,
+        }),
+      });
+      const json = await response.json() as { results?: Record<string, RangeJudgeResult>; error?: { code: string; message: string } };
+      if (response.ok && json.results) {
+        setJudgeResultMap(json.results);
+      }
+    } catch {
+      const results: Record<string, RangeJudgeResult> = {};
+      for (const c of candidateDates) {
+        results[c.id] = judgeRangeAvailability(c.candidateDate, c.candidateEndDate, calendarEvents);
+      }
+      setJudgeResultMap(results);
+    } finally {
+      setIsJudgeLoading(false);
+    }
   };
 
   const toggleRange = (key: string) => {
@@ -281,69 +362,29 @@ export default function Home() {
 
   const syncGoogleCalendar = async () => {
     if (!hasSupabaseEnv) return;
-    const supabase = createClient();
     setIsCalendarLoading(true);
     setCalendarMessage("");
 
-    const { data, error } = await supabase.auth.getSession();
-    if (error) {
-      setCalendarMessage("セッション取得に失敗しました。再ログインしてください。");
-      setIsCalendarLoading(false);
-      return;
-    }
-
-    const providerToken = (data.session as { provider_token?: string } | null)?.provider_token;
-    if (!providerToken) {
-      setCalendarMessage("Googleトークンが見つかりません。");
-      setNeedsReauth(true);
-      setIsCalendarLoading(false);
-      return;
-    }
-
-    const { timeMin, timeMax } = toIsoRange(21);
-    const url = new URL("https://www.googleapis.com/calendar/v3/calendars/primary/events");
-    url.searchParams.set("singleEvents", "true");
-    url.searchParams.set("orderBy", "startTime");
-    url.searchParams.set("timeMin", timeMin);
-    url.searchParams.set("timeMax", timeMax);
-    url.searchParams.set("maxResults", "100");
+    const { from, to } = toIsoRange(21);
+    const url = new URL("/api/calendar/events", window.location.origin);
+    url.searchParams.set("from", from);
+    url.searchParams.set("to", to);
 
     try {
-      const response = await fetch(url.toString(), {
-        headers: { Authorization: `Bearer ${providerToken}` },
-      });
+      const response = await fetch(url.toString());
+      const json = await response.json() as { events?: CalendarEvent[]; error?: { code: string; message: string } };
 
       if (response.status === 401) {
         setCalendarMessage("Googleトークンの有効期限が切れています。");
         setNeedsReauth(true);
-        setIsCalendarLoading(false);
         return;
       }
       if (!response.ok) {
-        setCalendarMessage("Googleカレンダーの取得に失敗しました。");
-        setIsCalendarLoading(false);
+        setCalendarMessage(json.error?.message ?? "Googleカレンダーの取得に失敗しました。");
         return;
       }
 
-      type GoogleEventsResponse = {
-        items?: Array<{
-          id?: string;
-          summary?: string;
-          start?: { dateTime?: string; date?: string };
-          end?: { dateTime?: string; date?: string };
-        }>;
-      };
-
-      const json = (await response.json()) as GoogleEventsResponse;
-      const events: CalendarEvent[] = (json.items ?? [])
-        .map((item, index) => {
-          const start = item.start?.dateTime ?? item.start?.date;
-          const end = item.end?.dateTime ?? item.end?.date;
-          if (!start || !end) return null;
-          return { id: item.id ?? `google-${index}`, title: item.summary ?? "予定", start, end };
-        })
-        .filter((event): event is CalendarEvent => event !== null);
-
+      const events = json.events ?? [];
       setCalendarEvents(events);
       setCalendarMessage(`${events.length}件の予定を同期しました`);
       setNeedsReauth(false);
@@ -393,6 +434,7 @@ export default function Home() {
           onAddDate={addCandidateDate}
           onRemoveDate={removeCandidateDate}
           onJudge={handleJudge}
+          isJudgeLoading={isJudgeLoading}
           hasJudgeResult={judgeResultMap !== null}
           isCalendarSynced={isCalendarSynced}
           availableRanges={allAvailableRanges}
