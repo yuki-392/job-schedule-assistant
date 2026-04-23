@@ -58,17 +58,24 @@
 ## `POST /api/interviews/judge`
 
 ### 目的
-候補日時と予定の重複判定を行い、空き候補を返す
+候補日時範囲とカレンダー予定を照合し、空き時間帯を返す。
+予定が候補範囲に含まれる場合、予定の前後 `bufferMinutes`（デフォルト60分）を自動除外する。
 
 ### Request Body
 ```json
 {
   "companyName": "株式会社サンプル",
-  "candidateDates": [
-    "2026-04-23T10:00:00+09:00",
-    "2026-04-24T19:00:00+09:00"
+  "candidateRanges": [
+    {
+      "start": "2026-04-23T10:00:00+09:00",
+      "end": "2026-04-23T18:00:00+09:00"
+    },
+    {
+      "start": "2026-04-24T10:00:00+09:00",
+      "end": "2026-04-24T18:00:00+09:00"
+    }
   ],
-  "interviewDurationMinutes": 60,
+  "bufferMinutes": 60,
   "calendarRange": {
     "from": "2026-04-20T00:00:00+09:00",
     "to": "2026-04-30T23:59:59+09:00"
@@ -80,23 +87,36 @@
 ```json
 {
   "companyName": "株式会社サンプル",
-  "availableDates": [
-    "2026-04-24T19:00:00+09:00"
-  ],
-  "unavailableDates": [
+  "results": [
     {
-      "date": "2026-04-23T10:00:00+09:00",
-      "reason": "calendar_conflict",
-      "conflictEventId": "evt_123"
+      "candidateStart": "2026-04-24T10:00:00+09:00",
+      "candidateEnd": "2026-04-24T18:00:00+09:00",
+      "availableRanges": [
+        {
+          "start": "2026-04-24T10:00:00+09:00",
+          "end": "2026-04-24T13:00:00+09:00"
+        },
+        {
+          "start": "2026-04-24T16:00:00+09:00",
+          "end": "2026-04-24T18:00:00+09:00"
+        }
+      ],
+      "blockedRanges": [
+        {
+          "start": "2026-04-24T13:00:00+09:00",
+          "end": "2026-04-24T16:00:00+09:00",
+          "conflictEventIds": ["evt_123"]
+        }
+      ]
     }
   ]
 }
 ```
 
 ### エラー
-- `400`: 必須項目不足 / 日時フォーマット不正
+- `400`: 必須項目不足 / 日時フォーマット不正 / `start >= end`
 - `401`: 未認証
-- `422`: `candidateDates` が空
+- `422`: `candidateRanges` が空
 - `502`: カレンダー取得失敗
 
 ---

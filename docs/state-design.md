@@ -2,8 +2,8 @@
 
 対象状態:
 - `candidateDates`（候補オブジェクト配列）
-- `availableDates`
-- `selectedDates`
+- `judgeResultMap`（判定結果マップ）
+- `selectedRangeKeys`（選択済み空き時間帯キー）
 
 ---
 
@@ -11,7 +11,7 @@
 
 - **初期実装は `useState` で持つ**
 - 判定はクライアントで即時計算（体験重視）
-- **`availableDates` は導出値として100%統一する（保存しない）**
+- **`availableRanges` は導出値として100%統一する（保存しない）**
 - 永続化や共有が必要になったら `Server Actions` に切り出す
 
 ---
@@ -19,13 +19,13 @@
 ## 2. 状態の責務
 
 ## `candidateDates: CandidateDate[]`
-- **保持内容**: 候補日時 + 最小メタ情報
+- **保持内容**: 候補日時範囲 + 最小メタ情報
 - **更新契機**:
   - 候補追加
   - 候補削除
   - 候補並び替え（必要なら）
 - **注意**:
-  - `candidateDate` 重複は追加しない
+  - `candidateDate` + `candidateEndDate` の組が重複する場合は追加しない
   - 空配列時は判定ボタン無効
 
 ```ts
@@ -33,44 +33,66 @@ type CandidateStatus = "pending" | "rejected";
 
 type CandidateDate = {
   id: string;              // UUID or client-generated id
-  candidateDate: string;   // ISO datetime
+  candidateDate: string;   // 開始 ISO datetime
+  candidateEndDate: string; // 終了 ISO datetime（範囲指定に必須）
   status: CandidateStatus; // 初期値 pending（selectedは持たない）
   sortOrder: number;       // 並び順
 };
 ```
 
-## `availableDates: string[]`
-- **保持内容**: 判定結果として「空き」となった候補日時
-- **更新契機**:
-  - `candidateDates` または `calendarEvents` 変更時に再計算
+## `judgeResultMap: Record<string, RangeJudgeResult> | null`
+- **保持内容**: `CandidateDate.id` をキーとした判定結果マップ
+- **更新契機**: 「判定する」ボタン押下時
+- **MVP方針**: `useState` で保持し、候補変更時は `null` にリセット
+
+```ts
+type AvailableRange = {
+  start: string;  // ISO datetime
+  end: string;    // ISO datetime
+};
+
+type BlockedRange = {
+  start: string;
+  end: string;
+  conflictEventIds: string[];
+};
+
+type RangeJudgeResult = {
+  availableRanges: AvailableRange[];
+  blockedRanges: BlockedRange[];
+};
+```
+
+## `availableRanges: AvailableRange[]`（導出値）
+- **保持内容**: 全候補の空き時間帯をフラットに展開したリスト
+- **更新契機**: `judgeResultMap` 変更時に再計算
 - **MVP方針（固定）**:
   - `useMemo` で導出し、`useState` では持たない
-  - APIレスポンスを直接 `availableDates` として保存しない
-  - 将来API化する場合も「API結果 -> 正規化 -> 導出」に寄せる
+  - カレンダー予定の前後 `bufferMinutes`（デフォルト60分）を自動除外
 
-## `selectedDates: string[]`
-- **保持内容**: 判定結果画面で選択した空き候補（複数）
+## `selectedRangeKeys: string[]`
+- **保持内容**: 選択済み空き時間帯のキー（`${start}__${end}`）
 - **更新契機**:
-  - 空き候補を選択/解除（トグル）
-  - 選択解除
-  - 判定再実行時に `availableDates` に存在しない値を自動除外
+  - 空き時間帯を選択/解除（トグル）
+  - `availableRanges` 再計算後、無効なキーを自動除外
+  - メール生成は `selectedRangeKeys.length > 0` のときのみ許可
 - **整合性ガード（必須）**:
-  - `selectedDates` の各要素は常に `availableDates` に含まれる値のみ許可
-  - `availableDates` 再計算後、未包含の値は配列から除外
-  - メール生成は `selectedDates.length > 0` のときのみ許可
+  - `selectedRangeKeys` の各要素は常に `availableRanges.map(rangeKey)` に含まれる値のみ許可
+  - `availableRanges` 再計算後、未包含のキーは配列から除外
 
 ---
 
 ## 3. 画面遷移と状態遷移
 
 1. ホーム画面
-   - `candidateDates` を編集（追加/削除/並び替え）
+   - `candidateDates` を編集（追加/削除）
 2. 判定実行
-   - `availableDates` を導出（再計算）
+   - `judgeResultMap` を更新（`judgeRangeAvailability` を各候補に適用）
+   - `availableRanges` を導出（カレンダー予定±バッファを除外）
 3. 判定結果画面
-   - `selectedDates` を更新（複数選択）
+   - `selectedRangeKeys` を更新（複数選択）
 4. メール生成画面
-   - `selectedDates` と企業名から本文生成
+   - `selectedRangeKeys` と企業名から本文生成
 
 ---
 
@@ -79,13 +101,12 @@ type CandidateDate = {
 ## `useState` で持つもの（今すぐ）
 - フォーム入力中の値
 - 画面内の一時状態
-- `candidateDates` / `selectedDates` など入力と選択状態
+- `candidateDates` / `selectedRangeKeys` など入力と選択状態
 
 ## `Server Actions` に上げるもの（次フェーズ）
 - `interviews` / `interview_candidates` への保存
-- 候補確定（`selectedDates`）の永続化
+- 候補確定（`selectedRangeKeys`）の永続化
 - 複数デバイス/再訪時の復元
-- （必要時）カレンダー予定取得APIの実行
 
 ---
 
@@ -93,69 +114,57 @@ type CandidateDate = {
 
 ```ts
 const [candidateDates, setCandidateDates] = useState<CandidateDate[]>([]);
-const [selectedDates, setSelectedDates] = useState<string[]>([]);
+const [judgeResultMap, setJudgeResultMap] = useState<Record<string, RangeJudgeResult> | null>(null);
+const [selectedRangeKeys, setSelectedRangeKeys] = useState<string[]>([]);
 
-const availableDates = useMemo(
-  () =>
-    judgeAvailability(
-      candidateDates.map((c) => c.candidateDate),
-      calendarEvents,
-    ),
-  [candidateDates, calendarEvents],
+const allAvailableRanges = useMemo(
+  () => Object.values(judgeResultMap ?? {}).flatMap((r) => r.availableRanges),
+  [judgeResultMap],
 );
+
+// 判定実行
+const handleJudge = () => {
+  const results: Record<string, RangeJudgeResult> = {};
+  for (const c of candidateDates) {
+    results[c.id] = judgeRangeAvailability(c.candidateDate, c.candidateEndDate, calendarEvents);
+  }
+  setJudgeResultMap(results);
+};
 ```
 
 ---
 
-## 6. 将来拡張時の追加状態
-
-- `unavailableDates: { date: string; reason: string }[]`
-- `candidateStatuses: Record<candidateId, "pending" | "rejected" | "selected">`
-- `isJudging` / `judgeError`（API化した際のローディング・エラー）
-
-## API化時の移行ルール
-- NG: `setAvailableDates(apiResult.availableDates)`
-- OK: `setCalendarEvents(apiResult.events)` し、`availableDates` は導出を維持
-
----
-
-## 7. `selectedDate` 整合性ルール（明文化）
+## 6. 整合性ガード（selectedRangeKeys）
 
 ## 不変条件（Invariant）
-- `selectedDates.every((d) => availableDates.includes(d))` を常に満たす
-- 選択状態は `selectedDates` のみで表現し、`candidateDates[].status` に `selected` を持たせない
+- `selectedRangeKeys.every((k) => allAvailableRanges.map(rangeKey).includes(k))` を常に満たす
 
 ## ガードが必要なタイミング
 - 候補日時の追加/削除直後
 - カレンダー同期後（判定結果が変わるタイミング）
-- 判定ロジック変更後（再判定実行時）
+- 判定再実行時
 
 ## 推奨実装
 ```ts
 useEffect(() => {
-  setSelectedDates((prev) => prev.filter((d) => availableDates.includes(d)));
-}, [availableDates]);
+  const validKeys = new Set(allAvailableRanges.map(rangeKey));
+  setSelectedRangeKeys((prev) => prev.filter((k) => validKeys.has(k)));
+}, [allAvailableRanges]);
 ```
 
-## UIガード
-- 「メール生成へ進む」ボタン: `selectedDates.length === 0` の場合は disabled
-- 画面表示文言: 選択候補が0件になったときは「候補を再選択してください」を表示
+---
+
+## 7. 除外バッファの仕様
+
+- カレンダー予定がある場合、**予定開始 − bufferMinutes** 〜 **予定終了 + bufferMinutes** を除外
+- デフォルト `bufferMinutes = 60`（前後1時間）
+- 複数予定の除外区間が重なる場合はマージして1区間として扱う
+- 除外区間は候補範囲の境界にクランプされる（範囲外には広がらない）
 
 ---
 
-## 8. なぜ `string[]` から拡張するか
+## 8. 二重管理を避ける原則（重要）
 
-- 候補単位の更新（削除・却下・選択）がしやすい
-- DB設計（`interview_candidates`）と1対1対応し、変換コストが低い
-- 並び順やステータスの実装を後付けしやすい
-- それでもMVPの複雑さは最小限（フィールド4つ）
-
----
-
-## 9. 二重管理を避ける原則（重要）
-
-- **Single Source of Truth**: 選択状態の正は `selectedDates` のみ
+- **Single Source of Truth**: 選択状態の正は `selectedRangeKeys` のみ
 - `CandidateDate.status` は「候補として有効か」を表す補助情報（`pending/rejected`）のみ
-- `selectedDates` と `status` の同期処理は実装しない（同期ロジック自体がバグ源になるため）
-- 選択済み候補を表示する際は、`selectedDates.includes(candidateDate.candidateDate)` で判定する
-
+- `selectedRangeKeys` と `status` の同期処理は実装しない（同期ロジック自体がバグ源になるため）
