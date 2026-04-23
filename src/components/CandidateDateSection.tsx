@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -27,6 +27,15 @@ type Props = {
   onScrollToMail: () => void;
 };
 
+function getTomorrow(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 export function CandidateDateSection({
   companyName,
   onCompanyNameChange,
@@ -46,17 +55,21 @@ export function CandidateDateSection({
   onScrollToMail,
 }: Props) {
   const [dateInput, setDateInput] = useState("");
-  const [startTimeInput, setStartTimeInput] = useState("");
-  const [endTimeInput, setEndTimeInput] = useState("");
+  const [startTimeInput, setStartTimeInput] = useState("09:00");
+  const [endTimeInput, setEndTimeInput] = useState("18:00");
+
+  useEffect(() => {
+    setDateInput(getTomorrow());
+  }, []);
 
   const canAdd = Boolean(dateInput && startTimeInput && endTimeInput && startTimeInput < endTimeInput);
 
   const handleAdd = () => {
     if (!canAdd) return;
     onAddDate(`${dateInput}T${startTimeInput}`, `${dateInput}T${endTimeInput}`);
-    setDateInput("");
-    setStartTimeInput("");
-    setEndTimeInput("");
+    setDateInput(getTomorrow());
+    setStartTimeInput("09:00");
+    setEndTimeInput("18:00");
   };
 
   return (
