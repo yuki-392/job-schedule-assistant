@@ -16,12 +16,6 @@ import { GoogleAuthSection } from "@/components/GoogleAuthSection";
 import { CandidateDateSection } from "@/components/CandidateDateSection";
 import { MailSection } from "@/components/MailSection";
 
-const MOCK_CALENDAR_EVENTS: CalendarEvent[] = [
-  { id: "1", title: "ゼミ", start: "2026-04-23T10:00", end: "2026-04-23T11:30" },
-  { id: "2", title: "アルバイト", start: "2026-04-24T14:00", end: "2026-04-24T18:00" },
-  { id: "3", title: "別社面接", start: "2026-04-25T13:00", end: "2026-04-25T14:30" },
-];
-
 function toIsoRange(days = 14) {
   const now = new Date();
   const end = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
@@ -36,8 +30,8 @@ export default function Home() {
   const [authMessage, setAuthMessage] = useState("");
   const [isAuthLoading, setIsAuthLoading] = useState(false);
 
-  const [calendarEvents, setCalendarEvents] = useLocalStorage<CalendarEvent[]>("jsa:calendarEvents", MOCK_CALENDAR_EVENTS);
-  const [calendarMessage, setCalendarMessage] = useLocalStorage("jsa:calendarMessage", "未同期（現在はモック予定を使用）");
+  const [calendarEvents, setCalendarEvents] = useLocalStorage<CalendarEvent[]>("jsa:calendarEvents", []);
+  const [calendarMessage, setCalendarMessage] = useLocalStorage("jsa:calendarMessage", "");
   const [isCalendarLoading, setIsCalendarLoading] = useState(false);
 
   const [companyName, setCompanyName] = useLocalStorage("jsa:companyName", "");
@@ -90,6 +84,8 @@ export default function Home() {
     const validKeys = new Set(allAvailableRanges.map(rangeKey));
     return selectedRangeKeys.filter((k) => validKeys.has(k));
   }, [allAvailableRanges, selectedRangeKeys]);
+
+  const isCalendarSynced = calendarEvents.length > 0;
 
   const canGenerateEmail = companyName.trim().length > 0 && activeSelectedRangeKeys.length > 0;
 
@@ -272,6 +268,7 @@ export default function Home() {
           hasSupabaseEnv={hasSupabaseEnv}
           calendarMessage={calendarMessage}
           isCalendarLoading={isCalendarLoading}
+          isCalendarSynced={isCalendarSynced}
           onSignIn={signInWithGoogle}
           onSignOut={signOut}
           onSyncCalendar={syncGoogleCalendar}
@@ -285,6 +282,7 @@ export default function Home() {
           onRemoveDate={removeCandidateDate}
           onJudge={handleJudge}
           hasJudgeResult={judgeResultMap !== null}
+          isCalendarSynced={isCalendarSynced}
           availableRanges={allAvailableRanges}
           blockedRanges={allBlockedRanges}
           recommendedRangeKey={recommendedRangeKey}

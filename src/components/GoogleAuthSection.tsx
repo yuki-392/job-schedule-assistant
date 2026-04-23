@@ -8,6 +8,7 @@ type Props = {
   hasSupabaseEnv: boolean;
   calendarMessage: string;
   isCalendarLoading: boolean;
+  isCalendarSynced: boolean;
   onSignIn: () => void;
   onSignOut: () => void;
   onSyncCalendar: () => void;
@@ -21,14 +22,17 @@ export function GoogleAuthSection({
   hasSupabaseEnv,
   calendarMessage,
   isCalendarLoading,
+  isCalendarSynced,
   onSignIn,
   onSignOut,
   onSyncCalendar,
 }: Props) {
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-      <h2 className="text-lg font-semibold">1. Googleログイン</h2>
-      <p className="mt-1 text-sm text-slate-600">Supabase Auth + Google OAuthで認証します。</p>
+      <h2 className="text-lg font-semibold">1. Googleカレンダーと連携（任意）</h2>
+      <p className="mt-1 text-sm text-slate-600">
+        連携すると予定との重複を自動チェックできます。スキップしても候補日からメールを作成できます。
+      </p>
       {!hasSupabaseEnv && (
         <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
           `NEXT_PUBLIC_SUPABASE_URL` と
@@ -59,7 +63,12 @@ export function GoogleAuthSection({
           >
             {isCalendarLoading ? "同期中..." : "Googleカレンダーを同期"}
           </button>
-          <p className="mt-2 text-sm text-slate-600">{calendarMessage}</p>
+          {calendarMessage && (
+            <p className="mt-2 text-sm text-slate-600">{calendarMessage}</p>
+          )}
+          {!isCalendarSynced && !isCalendarLoading && (
+            <p className="mt-2 text-sm text-amber-700">カレンダーをまだ同期していません。同期すると予定との重複チェックが有効になります。</p>
+          )}
         </div>
       )}
     </section>

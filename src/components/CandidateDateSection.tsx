@@ -16,6 +16,7 @@ type Props = {
   onRemoveDate: (id: string) => void;
   onJudge: () => void;
   hasJudgeResult: boolean;
+  isCalendarSynced: boolean;
   availableRanges: AvailableRange[];
   blockedRanges: BlockedRange[];
   recommendedRangeKey: string | null;
@@ -34,6 +35,7 @@ export function CandidateDateSection({
   onRemoveDate,
   onJudge,
   hasJudgeResult,
+  isCalendarSynced,
   availableRanges,
   blockedRanges,
   recommendedRangeKey,
@@ -151,9 +153,11 @@ export function CandidateDateSection({
       <div className="mt-5">
         <Card>
           <CardHeader className="pb-4">
-            <CardTitle>空き時間帯を選択</CardTitle>
+            <CardTitle>候補日を選択</CardTitle>
             <CardDescription>
-              カレンダー予定の前後1時間を除いた空き時間帯です（複数選択可）
+              {isCalendarSynced
+                ? "カレンダー予定の前後1時間を除いた空き時間帯です（複数選択可）"
+                : "カレンダー未連携のため重複チェックなし。全候補日から選択できます（複数選択可）"}
             </CardDescription>
             <p className="text-sm font-semibold text-slate-700">
               選択中: {activeSelectedRangeKeys.length}件
@@ -222,40 +226,42 @@ export function CandidateDateSection({
         </Card>
       </div>
 
-      <div className="mt-5">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-slate-700">⛔ 除外された時間帯</h3>
-          <button
-            type="button"
-            onClick={onToggleNgExpanded}
-            className="text-xs font-semibold text-slate-600 underline"
-            disabled={!hasJudgeResult}
-          >
-            {isNgExpanded ? "閉じる" : "表示する"}
-          </button>
+      {isCalendarSynced && (
+        <div className="mt-5">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-slate-700">⛔ 除外された時間帯</h3>
+            <button
+              type="button"
+              onClick={onToggleNgExpanded}
+              className="text-xs font-semibold text-slate-600 underline"
+              disabled={!hasJudgeResult}
+            >
+              {isNgExpanded ? "閉じる" : "表示する"}
+            </button>
+          </div>
+          {!hasJudgeResult ? (
+            <p className="mt-2 text-sm text-slate-500">まだ判定結果がありません。</p>
+          ) : blockedRanges.length === 0 ? (
+            <p className="mt-2 text-sm text-slate-500">除外された時間帯はありません。</p>
+          ) : !isNgExpanded ? (
+            <p className="mt-2 text-sm text-slate-500">
+              {blockedRanges.length}件あります（「表示する」で確認）
+            </p>
+          ) : (
+            <ul className="mt-2 space-y-2">
+              {blockedRanges.map((item) => (
+                <li
+                  key={`${item.start}__${item.end}`}
+                  className="rounded-md border border-slate-300 bg-slate-100 px-3 py-2 text-sm"
+                >
+                  <p>{toReadableRange(item.start, item.end)}</p>
+                  <p className="text-slate-700">理由: カレンダーの予定と重複（前後1時間含む）</p>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
-        {!hasJudgeResult ? (
-          <p className="mt-2 text-sm text-slate-500">まだ判定結果がありません。</p>
-        ) : blockedRanges.length === 0 ? (
-          <p className="mt-2 text-sm text-slate-500">除外された時間帯はありません。</p>
-        ) : !isNgExpanded ? (
-          <p className="mt-2 text-sm text-slate-500">
-            {blockedRanges.length}件あります（「表示する」で確認）
-          </p>
-        ) : (
-          <ul className="mt-2 space-y-2">
-            {blockedRanges.map((item) => (
-              <li
-                key={`${item.start}__${item.end}`}
-                className="rounded-md border border-slate-300 bg-slate-100 px-3 py-2 text-sm"
-              >
-                <p>{toReadableRange(item.start, item.end)}</p>
-                <p className="text-slate-700">理由: カレンダーの予定と重複（前後1時間含む）</p>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+      )}
     </section>
   );
 }
