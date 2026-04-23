@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useLocalStorage } from "@/hooks/useLocalStorage";
 import { createClient } from "@/utils/supabase/client";
 import {
   judgeRangeAvailability,
@@ -39,10 +40,10 @@ export default function Home() {
   const [calendarMessage, setCalendarMessage] = useState("未同期（現在はモック予定を使用）");
   const [isCalendarLoading, setIsCalendarLoading] = useState(false);
 
-  const [companyName, setCompanyName] = useState("");
-  const [candidateDates, setCandidateDates] = useState<CandidateDate[]>([]);
+  const [companyName, setCompanyName] = useLocalStorage("jsa:companyName", "");
+  const [candidateDates, setCandidateDates] = useLocalStorage<CandidateDate[]>("jsa:candidateDates", []);
   const [judgeResultMap, setJudgeResultMap] = useState<Record<string, RangeJudgeResult> | null>(null);
-  const [selectedRangeKeys, setSelectedRangeKeys] = useState<string[]>([]);
+  const [selectedRangeKeys, setSelectedRangeKeys] = useLocalStorage<string[]>("jsa:selectedRangeKeys", []);
   const [isNgExpanded, setIsNgExpanded] = useState(false);
 
   const [copyStatus, setCopyStatus] = useState("");
