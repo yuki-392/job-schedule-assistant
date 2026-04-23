@@ -1,11 +1,11 @@
 "use client";
 
+import { useEffect, useState } from "react";
+
 type Props = {
   emailBody: string;
   canGenerateEmail: boolean;
   companyName: string;
-  copyStatus: string;
-  onCopy: () => void;
   ref?: React.Ref<HTMLElement>;
 };
 
@@ -13,10 +13,23 @@ export function MailSection({
   emailBody,
   canGenerateEmail,
   companyName,
-  copyStatus,
-  onCopy,
   ref,
 }: Props) {
+  const [editedBody, setEditedBody] = useState(emailBody);
+  const [copyStatus, setCopyStatus] = useState("");
+
+  // 自動生成テキストが変わったら編集内容をリセット
+  useEffect(() => {
+    setEditedBody(emailBody);
+    setCopyStatus("");
+  }, [emailBody]);
+
+  const handleCopy = async () => {
+    if (!editedBody) return;
+    await navigator.clipboard.writeText(editedBody);
+    setCopyStatus("メール文をコピーしました。");
+  };
+
   return (
     <section
       ref={ref}
@@ -29,15 +42,18 @@ export function MailSection({
         </p>
       ) : (
         <textarea
-          readOnly
-          value={emailBody}
+          value={editedBody}
+          onChange={(e) => {
+            setEditedBody(e.target.value);
+            setCopyStatus("");
+          }}
           className="mt-3 h-52 w-full rounded-md border border-slate-300 p-3 text-sm"
         />
       )}
       <div className="mt-3 flex flex-wrap gap-3">
         <button
           type="button"
-          onClick={onCopy}
+          onClick={handleCopy}
           disabled={!canGenerateEmail}
           className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
         >
@@ -47,7 +63,7 @@ export function MailSection({
           <a
             href={`https://mail.google.com/mail/?view=cm&fs=1&to=&su=${encodeURIComponent(
               `${companyName} 面接日程のご返信`,
-            )}&body=${encodeURIComponent(emailBody)}`}
+            )}&body=${encodeURIComponent(editedBody)}`}
             target="_blank"
             rel="noreferrer"
             className="rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold hover:bg-slate-50"

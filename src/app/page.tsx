@@ -40,7 +40,6 @@ export default function Home() {
   const [selectedRangeKeys, setSelectedRangeKeys] = useLocalStorage<string[]>("jsa:selectedRangeKeys", []);
   const [isNgExpanded, setIsNgExpanded] = useState(false);
 
-  const [copyStatus, setCopyStatus] = useState("");
 
   const hasSupabaseEnv = Boolean(
     process.env.NEXT_PUBLIC_SUPABASE_URL &&
@@ -115,7 +114,6 @@ export default function Home() {
       };
       return [...prev, next].sort((a, b) => a.candidateDate.localeCompare(b.candidateDate));
     });
-    setCopyStatus("");
     setJudgeResultMap(null);
   };
 
@@ -137,7 +135,6 @@ export default function Home() {
     setSelectedRangeKeys((prev) =>
       prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
     );
-    setCopyStatus("");
   };
 
   const scrollToMailSection = () => {
@@ -145,12 +142,6 @@ export default function Home() {
       setSelectedRangeKeys(allAvailableRanges.map(rangeKey));
     }
     mailSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
-
-  const copyEmail = async () => {
-    if (!emailBody) return;
-    await navigator.clipboard.writeText(emailBody);
-    setCopyStatus("メール文をコピーしました。");
   };
 
   const signInWithGoogle = async () => {
@@ -298,8 +289,6 @@ export default function Home() {
           emailBody={emailBody}
           canGenerateEmail={canGenerateEmail}
           companyName={companyName}
-          copyStatus={copyStatus}
-          onCopy={copyEmail}
         />
       </div>
     </main>
