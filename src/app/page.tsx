@@ -36,8 +36,8 @@ export default function Home() {
   const [authMessage, setAuthMessage] = useState("");
   const [isAuthLoading, setIsAuthLoading] = useState(false);
 
-  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>(MOCK_CALENDAR_EVENTS);
-  const [calendarMessage, setCalendarMessage] = useState("未同期（現在はモック予定を使用）");
+  const [calendarEvents, setCalendarEvents] = useLocalStorage<CalendarEvent[]>("jsa:calendarEvents", MOCK_CALENDAR_EVENTS);
+  const [calendarMessage, setCalendarMessage] = useLocalStorage("jsa:calendarMessage", "未同期（現在はモック予定を使用）");
   const [isCalendarLoading, setIsCalendarLoading] = useState(false);
 
   const [companyName, setCompanyName] = useLocalStorage("jsa:companyName", "");
