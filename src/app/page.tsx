@@ -169,7 +169,12 @@ export default function Home() {
     setIsAuthLoading(true);
     setAuthMessage("");
     const { error } = await supabase.auth.signOut();
-    if (error) setAuthMessage("ログアウトに失敗しました。再度お試しください。");
+    if (error) {
+      setAuthMessage("ログアウトに失敗しました。再度お試しください。");
+    } else {
+      setCalendarEvents([]);
+      setCalendarMessage("");
+    }
     setIsAuthLoading(false);
   };
 
