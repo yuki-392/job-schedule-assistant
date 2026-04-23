@@ -27,6 +27,33 @@ type Props = {
   onScrollToMail: () => void;
 };
 
+const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0"));
+const MINUTES = ["00", "15", "30", "45"];
+const SELECT_CLASS = "rounded-md border border-slate-300 px-2 py-2.5 text-base";
+
+function TimeSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [hour, minute] = value.split(":");
+  return (
+    <div className="flex items-center gap-1">
+      <select
+        value={hour}
+        onChange={(e) => onChange(`${e.target.value}:${minute}`)}
+        className={SELECT_CLASS}
+      >
+        {HOURS.map((h) => <option key={h} value={h}>{h}</option>)}
+      </select>
+      <span className="text-slate-500">:</span>
+      <select
+        value={minute}
+        onChange={(e) => onChange(`${hour}:${e.target.value}`)}
+        className={SELECT_CLASS}
+      >
+        {MINUTES.map((m) => <option key={m} value={m}>{m}</option>)}
+      </select>
+    </div>
+  );
+}
+
 function getTomorrow(): string {
   const d = new Date();
   d.setDate(d.getDate() + 1);
@@ -95,21 +122,11 @@ export function CandidateDateSection({
           </div>
           <div className="space-y-1">
             <label className="text-xs font-medium text-slate-600">開始時刻</label>
-            <input
-              type="time"
-              value={startTimeInput}
-              onChange={(event) => setStartTimeInput(event.target.value)}
-              className="w-full rounded-md border border-slate-300 px-3 py-2.5 text-base"
-            />
+            <TimeSelect value={startTimeInput} onChange={setStartTimeInput} />
           </div>
           <div className="space-y-1">
             <label className="text-xs font-medium text-slate-600">終了時刻</label>
-            <input
-              type="time"
-              value={endTimeInput}
-              onChange={(event) => setEndTimeInput(event.target.value)}
-              className="w-full rounded-md border border-slate-300 px-3 py-2.5 text-base"
-            />
+            <TimeSelect value={endTimeInput} onChange={setEndTimeInput} />
           </div>
           <div className="flex items-end">
             <button

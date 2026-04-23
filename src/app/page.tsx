@@ -95,6 +95,18 @@ export default function Home() {
     return `${companyName} 採用ご担当者様\n\nお世話になっております。面接日程のご連絡ありがとうございます。\n以下の時間帯で参加可能です。\n\n${rangeText}\n\n何卒よろしくお願いいたします。`;
   }, [canGenerateEmail, companyName, activeSelectedRangeKeys, allAvailableRanges]);
 
+  // リロード後、localStorageから候補日が復元されたら自動で判定を実行
+  const hasAutoJudged = useRef(false);
+  useEffect(() => {
+    if (hasAutoJudged.current || candidateDates.length === 0) return;
+    hasAutoJudged.current = true;
+    const results: Record<string, RangeJudgeResult> = {};
+    for (const c of candidateDates) {
+      results[c.id] = judgeRangeAvailability(c.candidateDate, c.candidateEndDate, calendarEvents);
+    }
+    setJudgeResultMap(results);
+  }, [candidateDates, calendarEvents]);
+
   // 判定結果が変わったとき、無効になった選択を除外
   useEffect(() => {
     const validKeys = new Set(allAvailableRanges.map(rangeKey));
