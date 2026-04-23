@@ -8,7 +8,14 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { formatRangeDate, toReadableRange } from "@/lib/format";
 import { rangeKey, type AvailableRange, type BlockedRange, type CandidateDate } from "@/domain/judgeAvailability";
 
+type CompanyTab = { id: string; name: string };
+
 type Props = {
+  companies: CompanyTab[];
+  activeCompanyId: string;
+  onSwitchCompany: (id: string) => void;
+  onAddCompany: () => void;
+  onRemoveCompany: (id: string) => void;
   companyName: string;
   onCompanyNameChange: (value: string) => void;
   candidateDates: CandidateDate[];
@@ -54,6 +61,61 @@ function TimeSelect({ value, onChange }: { value: string; onChange: (v: string) 
   );
 }
 
+function CompanyTabs({
+  companies,
+  activeCompanyId,
+  onSwitch,
+  onAdd,
+  onRemove,
+}: {
+  companies: CompanyTab[];
+  activeCompanyId: string;
+  onSwitch: (id: string) => void;
+  onAdd: () => void;
+  onRemove: (id: string) => void;
+}) {
+  return (
+    <div className="flex items-center gap-1 overflow-x-auto border-b border-slate-200 pb-0">
+      {companies.map((c, i) => {
+        const isActive = c.id === activeCompanyId;
+        const label = c.name.trim() || `企業${i + 1}`;
+        return (
+          <div key={c.id} className="flex items-center shrink-0">
+            <button
+              type="button"
+              onClick={() => onSwitch(c.id)}
+              className={`px-3 py-2 text-sm font-medium rounded-t-md border-b-2 transition-colors ${
+                isActive
+                  ? "border-blue-500 text-blue-700"
+                  : "border-transparent text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              {label}
+            </button>
+            {companies.length > 1 && (
+              <button
+                type="button"
+                onClick={() => onRemove(c.id)}
+                aria-label={`${label}を削除`}
+                className="text-slate-300 hover:text-red-500 text-xs px-0.5 transition-colors"
+              >
+                ×
+              </button>
+            )}
+          </div>
+        );
+      })}
+      <button
+        type="button"
+        onClick={onAdd}
+        className="shrink-0 px-3 py-2 text-sm text-slate-400 hover:text-blue-600 transition-colors"
+      >
+        + 企業を追加
+      </button>
+    </div>
+  );
+}
+
 function getTomorrow(): string {
   const d = new Date();
   d.setDate(d.getDate() + 1);
@@ -64,6 +126,11 @@ function getTomorrow(): string {
 }
 
 export function CandidateDateSection({
+  companies,
+  activeCompanyId,
+  onSwitchCompany,
+  onAddCompany,
+  onRemoveCompany,
   companyName,
   onCompanyNameChange,
   candidateDates,
@@ -100,8 +167,20 @@ export function CandidateDateSection({
   };
 
   return (
-    <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-      <h2 className="text-lg font-semibold">2. 候補日を入力して空き時間を判定</h2>
+    <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="px-6 pt-4">
+        <h2 className="text-lg font-semibold">2. 候補日を入力して空き時間を判定</h2>
+      </div>
+      <div className="px-6 pt-3">
+        <CompanyTabs
+          companies={companies}
+          activeCompanyId={activeCompanyId}
+          onSwitch={onSwitchCompany}
+          onAdd={onAddCompany}
+          onRemove={onRemoveCompany}
+        />
+      </div>
+      <div className="px-6 pb-6 pt-4">
       <div className="mt-4 space-y-3">
         <input
           type="text"
@@ -292,6 +371,7 @@ export function CandidateDateSection({
           )}
         </div>
       )}
+      </div>
     </section>
   );
 }
