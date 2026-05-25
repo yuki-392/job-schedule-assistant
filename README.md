@@ -12,7 +12,7 @@
 
 ## URL
 
-🔗 **サービス**: [https://job-schedule-assistant-yukis-projects-4e18f76e.vercel.app/?code=f96e572e-0089-469c-a3a0-366a4f65675f](https://job-schedule-assistant-yukis-projects-4e18f76e.vercel.app/?code=f96e572e-0089-469c-a3a0-366a4f65675f)
+🔗 **サービス**: [[https://job-schedule-assistant-yukis-projects-4e18f76e.vercel.app/?code=f96e572e-0089-469c-a3a0-366a4f65675f](https://job-schedule-assistant.vercel.app/)]([https://job-schedule-assistant-yukis-projects-4e18f76e.vercel.app/?code=f96e572e-0089-469c-a3a0-366a4f65675f](https://job-schedule-assistant.vercel.app/))
 
 ---
 
